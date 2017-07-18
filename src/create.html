@@ -1,0 +1,39 @@
+<html>
+  <body>
+    <center id='upload'>
+      <input type='text' id="title" placeholder="Title">
+      <input type='text' id="description" placeholder="Description">
+      <div id='opinions'>
+        <input type='text' placeholder="Opinion here..."> 
+      </div>
+      <br id='break'>
+      <button id='add_more' type="button">Add more</button>
+      <button id='submit'>Submit</button>
+    </center>
+
+  <script>
+  var current = 0;
+  document.getElementById('add_more').onclick = e => {
+    current++
+    const next_input = document.createElement('input')
+    next_input.type = 'text'
+    next_input.placeholder = 'Opinion here...'
+    document.getElementById('opinions').appendChild(next_input)
+  }
+
+  document.getElementById('submit').onclick = e => {
+    const obj = {
+      title: document.getElementById('title').value,
+      description: document.getElementById('description').value,
+      opinions: Array.from(document.getElementById("opinions").childNodes).filter(node => node.nodeName === "INPUT").map(item => item.value)
+    }
+
+    const xml = new XMLHttpRequest()
+    xml.open("POST", "/create", false)
+    xml.setRequestHeader("Content-Type", "application/json")
+    xml.send(JSON.stringify(obj))
+
+  }
+  </script>
+  </body>
+</html>

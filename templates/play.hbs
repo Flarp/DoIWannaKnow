@@ -1,0 +1,27 @@
+<html>
+  <body>
+  <h1>{{ title }}</h1>
+  <h3>{{ description }}</h3>
+  <br>
+  <center>
+  <form id="form">
+  {{ #each opinions }}
+    <input type="checkbox" name="{{ this }}"><label>{{ this }}</label>
+    <br>
+  {{ /each }}
+  <hr>
+  </form>
+  <button id="submit">Submit</button>
+  </center>
+  <script>
+    document.getElementById("submit").onclick = _ => {
+      let result = Array.from(document.getElementById("form").elements)
+      .map(check => check.checked)
+      let xml = new XmlHttpRequest()
+      xml.open("POST", "/session", false)
+      xml.send(JSON.stringify(result))
+    }
+  </script>
+  </body>
+<html>
+
