@@ -27,7 +27,7 @@ use rocket::request::Form;
 use serde_json::json;
 
 type CustomErr = Custom<Template>;
-type HtmlResponder = Result<Html<&'static str>, CustomErr>;
+type TemplateResponder = Result<Template, CustomErr>;
 type RedirectResponder = Result<Response<'static>, CustomErr>;
 
 enum DIWKError {
@@ -38,8 +38,6 @@ enum DIWKError {
 const SESSION: &'static str = concat!("<html>\n<body>\n", include_str!("session.html"));
 const INDEX: &'static str = include_str!("index.html");
 const CREATE: &'static str = include_str!("create.html");
-//const SESSION_FAIL: &'static str = concat!("<html>\n<body>\n", "<p>That ID does not exist. Please try another one.<p>\n", include_str!("session.html"));
-//const INTERNAL_SESSION_ERROR: &'static str = concat!("<html>\n<body>\n", "<p>There was an internal error in the server. Please try again later</p>", include_str!("session.html"));
 
 diesel::embed_migrations!("migrations");
 diesel::infer_schema!("dotenv:DATABASE_URL");
@@ -87,17 +85,24 @@ fn redirect(link: String) -> Response<'static> {
   .finalize()
 }
 
-fn in_common(result: &OpinionSessionQuery, integer: i64) -> Result<Vec<String>, DIWKError> {
-  match get_chart_with_id(result.chart_id) {
+fn handle_diwk_error(error: DIWKError) -> Custom<Template> {
+  match error {
+    DIWKError::NotFound => Custom(Status::NotFound, return_error("Not Found")),
+    DIWKError::DieselError(x) => Custom(Status::InternalServerError, return_error(x))
+  }
+}
+
+fn in_common(id: i32, integer: i64) -> Result<Vec<String>, DIWKError> {
+  match get_chart_with_id(id) {
     Ok(data) => {
       let mut answers: Vec<String> = Vec::new();
-      let mut mixed: i64 = (result.opinion & integer) ^ std::i64::MIN;
+      let mut mixed: i64 = integer.clone();
       for x in data.opinions.iter().rev() {
         if mixed & 1 == 1 {
           answers.push(x.clone());
         }
         mixed >>= 1;
-      } 
+      }
       Ok(answers)
 
     },
@@ -107,37 +112,26 @@ fn in_common(result: &OpinionSessionQuery, integer: i64) -> Result<Vec<String>, 
 }
 
 #[get("/view/<id>")]
-fn started(id: i32) -> Option<Template> {
+fn started(id: i32) -> TemplateResponder {
   match get_session(id) {
     Ok(result) => {
       if result.done == true {
-        
-      }
-      match get_chart_with_id(result.chart_id) {
-        Ok(x) => Some(Template::render("play", &x)),
-        Err(_) => None
-      }
-    },
-    Err(_) => None
-    /*
-    Ok(results) => {
-      match results.get(0) {
-        Some(result) => {
-          match get_chart_with_id(result.chart_id) {
-            Ok(x) =>  {
-              match x.get(0) {
-                Some(x) => Some(Template::render("play", &x)),
-                None => None
-              }
-            },
-            Err(_) => None
-          }
-        },
-        None => None
+        match in_common(result.chart_id, result.opinion) {
+          Ok(x) => {
+            println!("{:?}", x);
+            Ok(Template::render("results", json!({ "answers": x })))
+
+          },
+          Err(x) => Err(handle_diwk_error(x))
+        }
+      } else {
+        match get_chart_with_id(result.chart_id) {
+          Ok(x) => Ok(Template::render("play", &x)),
+          Err(x) => Err(handle_diwk_error(x))
+        }
       }
     },
-    Err(_) => None
-    */
+    Err(x) => Err(handle_diwk_error(x))
   }
 }
 
@@ -158,13 +152,10 @@ fn integerify(bools: Vec<bool>, length: usize) -> Option<i64> {
 }
 
 #[post("/view/<id>", format="application/json", data="<checks>")]
-fn answer(checks: Json<Vec<bool>>, id: i32) -> Result<Template, Custom<Template>> {
+fn answer(checks: Json<Vec<bool>>, id: i32) -> TemplateResponder {
   let inner = checks.into_inner();
   match get_session(id) {
-    Err(error) => match error {
-      DIWKError::NotFound => Err(Custom(Status::NotFound, return_error("There are no sessions that exist with that ID. Please try another one."))),
-      DIWKError::DieselError(x) => Err(Custom(Status::InternalServerError, return_error(x)))
-    },
+    Err(error) => Err(handle_diwk_error(error)),
     Ok(result) => {
       if result.done == true {
         return Err(Custom(Status::BadRequest, return_error("This game has already finished.")));
@@ -174,15 +165,14 @@ fn answer(checks: Json<Vec<bool>>, id: i32) -> Result<Template, Custom<Template>
         Some(integer) => {
           let connection = start_connection();
           if result.opinion.signum() == -1 {
-            match in_common(&result, integer) {
-              Ok(strings) => match diesel::update(opinionsessions::table.filter(opinionsessions::columns::id.eq(result.id))).set(opinionsessions::columns::done.eq(true)).get_result::<OpinionSessionQuery>(&connection) {
+            let combined = (result.opinion & integer) & std::i64::MAX;
+            match in_common(result.chart_id, combined) {
+
+              Ok(strings) => match diesel::update(opinionsessions::table.filter(opinionsessions::columns::id.eq(result.id))).set((opinionsessions::columns::done.eq(true), opinionsessions::columns::opinion.eq(combined))).get_result::<OpinionSessionQuery>(&connection) {
                 Ok(_) => Ok(Template::render("results", json!({ "answers": strings }))),
                 Err(x) => Err(Custom(Status::InternalServerError, return_error(x)))
               },
-              Err(err) => match err {
-                DIWKError::DieselError(err) => Err(Custom(Status::InternalServerError, return_error(err))),
-                DIWKError::NotFound => Err(Custom(Status::NotFound, return_error("Not Found. You messed something up bad.")))
-              }
+              Err(err) => Err(handle_diwk_error(err))
             }
                 
           } else {
@@ -195,8 +185,8 @@ fn answer(checks: Json<Vec<bool>>, id: i32) -> Result<Template, Custom<Template>
       }
     }
   }
-
 }
+
 
 #[get("/create")]
 fn create() -> Html<&'static str> {
@@ -280,7 +270,6 @@ fn main() {
 
 
     dotenv().ok();
-    println!("{}", integerify(vec![true, false, true, true], 4).unwrap());
     rocket::ignite()
     .mount("/", routes![home, started, create, post_create, start_game, actually_start_game, answer])
     .attach(Template::fairing())
