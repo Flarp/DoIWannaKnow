@@ -1,0 +1,19 @@
+<html>
+  <body>
+    <center>
+    <h1>Results</h1>
+      {{ #if results }}
+        {{ #each results }}
+          <h2>{{ this.title }}</h2>
+          <br>
+          <h4>{{ this.description }}</h4>
+          <br>
+          <a href="/session/{{ this.id }}">Play Now!</a>
+          <hr>
+        {{ /each }}
+      {{ else }}
+        <h2>No results!</h2>
+      {{ /if }}
+    </center>  
+  </body>
+</html>

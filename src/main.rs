@@ -35,9 +35,9 @@ enum DIWKError {
   NotFound,
 }
 
-const SESSION: &'static str = concat!("<html>\n<body>\n", include_str!("session.html"));
 const INDEX: &'static str = include_str!("index.html");
 const CREATE: &'static str = include_str!("create.html");
+const SEARCH: &'static str = include_str!("search.html");
 
 diesel::embed_migrations!("migrations");
 diesel::infer_schema!("dotenv:DATABASE_URL");
@@ -151,6 +151,38 @@ fn integerify(bools: Vec<bool>, length: usize) -> Option<i64> {
 
 }
 
+#[get("/search")]
+fn search() -> Html<&'static str> {
+  Html(SEARCH)
+}
+
+#[derive(FromForm)]
+struct Keyword { query: String }
+
+#[post("/search/keyword", data="<keyword>")]
+fn search_from_keyword(keyword: Form<Keyword>) -> TemplateResponder {
+  let connection = start_connection();
+  let formatted = format!("%{}%", keyword.get().query);
+  match opinioncharts::table.filter(opinioncharts::columns::title.ilike(formatted)).load::<OpinionChartSQL>(&connection) {
+    Ok(x) => Ok(Template::render("search_results", json!({ "results": x }))),
+    Err(x) => Err(handle_diwk_error(DIWKError::DieselError(x)))
+  }
+}
+
+#[derive(FromForm)]
+struct ID { number: i32 }
+
+#[post("/search/id", data="<id_search>")]
+fn search_from_id(id_search: Form<ID>) -> TemplateResponder {
+  let connection = start_connection();
+  match opinioncharts::table.filter(opinioncharts::columns::id.eq(id_search.get().number)).load::<OpinionChartSQL>(&connection) {
+    Ok(x) => Ok(Template::render("search_results", json!({ "results": x }))),
+    Err(x) => Err(handle_diwk_error(DIWKError::DieselError(x)))
+
+  }
+}
+
+
 #[post("/view/<id>", format="application/json", data="<checks>")]
 fn answer(checks: Json<Vec<bool>>, id: i32) -> TemplateResponder {
   let inner = checks.into_inner();
@@ -194,8 +226,13 @@ fn create() -> Html<&'static str> {
 }
 
 #[get("/session")]
-fn start_game() -> Html<&'static str> {
-  Html(SESSION)
+fn start_game() -> Template {
+  Template::render("session", json!({ "id": 1 }))
+}
+
+#[get("/session/<id>")]
+fn start_game_with_id(id: i32) -> Template {
+  Template::render("session", json!({ "id": id }))
 }
 
 #[post("/session", data = "<form>")]
@@ -271,7 +308,7 @@ fn main() {
 
     dotenv().ok();
     rocket::ignite()
-    .mount("/", routes![home, started, create, post_create, start_game, actually_start_game, answer])
+    .mount("/", routes![home, started, create, post_create, start_game, start_game_with_id, actually_start_game, answer, search, search_from_keyword, search_from_id])
     .attach(Template::fairing())
     .launch();
 }
