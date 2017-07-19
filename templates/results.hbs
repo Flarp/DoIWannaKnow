@@ -1,0 +1,14 @@
+<html>
+  <body>
+    <center>
+      {{ #if answers }}
+        <h1>Here's what you have in common!</h1>
+        {{ #each answers }}
+          <p>{{ this }}</p>
+        {{ /each }}
+      {{ else }}
+        <h1>You have nothing in common!</h1>
+      {{ /if }}
+    </center>
+  </body>
+</html>
