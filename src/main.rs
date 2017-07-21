@@ -360,7 +360,7 @@ fn main() {
         .as_secs() * 1000) - (TWENTY_FOUR_HOURS)) as i64;
 
         match diesel::delete(opinionsessions::table.filter(opinionsessions::columns::creation_time.lt(twenty_four_hours_ago))).execute(&connection) {
-          Ok(_) => { println!("delet"); 0 },
+          Ok(_) => 0,
           Err(x) => {
             println!("{}", x);
             0
