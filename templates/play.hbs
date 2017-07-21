@@ -17,10 +17,11 @@
     document.getElementById("submit").onclick = _ => {
       let result = Array.from(document.getElementById("form").elements)
       .map(check => check.checked)
+      const submission = { result: result, write_pass: {{password}} }
       let xml = new XMLHttpRequest()
       xml.open("POST", "/view/" + location.href.split("/").pop() , false)
       xml.setRequestHeader("Content-Type", "application/json")
-      xml.send(JSON.stringify(result))
+      xml.send(JSON.stringify(submission))
       document.getElementsByTagName("html")[0].innerHTML = xml.response
     }
   </script>

@@ -1,0 +1,11 @@
+<html>
+  <body>
+    <center>
+      <form action="/view/{{ id }}" method="POST">
+        <input type="number" name="password" placeholder="Input password to {{ do }}" {{ #if pass }} value="{{ pass }}" {{ /if }}>
+        <input type="hidden" name="method" value="{{ method }}">
+        <input type="submit">
+      </form>
+    </center>
+  </body>
+</html>

@@ -12,35 +12,46 @@ extern crate dotenv;
 extern crate serde;
 #[macro_use] extern crate serde_derive;
 #[macro_use] extern crate serde_json;
+extern crate rand;
 
 use rocket_contrib::{ Template, Json };
 use rocket::response::content::Html;
 use rocket::response::status::Custom;
-use rocket::response::Response;
+//use rocket::response::Response;
 use rocket::http::Status;
-use rocket::http::hyper::header;
+//use rocket::http::hyper::header;
 use diesel::pg::PgConnection;
 use diesel::Connection;
 use diesel::prelude::*;
 use dotenv::dotenv;
 use rocket::request::Form;
 use serde_json::json;
+use rand::{thread_rng, Rng};
+use std::thread;
+use std::time::{ SystemTime, Duration, UNIX_EPOCH };
 
 type CustomErr = Custom<Template>;
 type TemplateResponder = Result<Template, CustomErr>;
-type RedirectResponder = Result<Response<'static>, CustomErr>;
+//type RedirectResponder = Result<Response<'static>, CustomErr>;
 
 enum DIWKError {
   DieselError(diesel::result::Error),
   NotFound,
+  IncorrectPassword
 }
 
 const INDEX: &'static str = include_str!("index.html");
 const CREATE: &'static str = include_str!("create.html");
 const SEARCH: &'static str = include_str!("search.html");
+const TWENTY_FOUR_HOURS: u64 = 24 * 60 * 60 * 1000;
 
 diesel::embed_migrations!("migrations");
 diesel::infer_schema!("dotenv:DATABASE_URL");
+
+fn get_rand() -> i32 {
+  let mut random = thread_rng();
+  random.gen_range(0, std::i32::MAX)
+}
 
 fn return_error<T: std::fmt::Display>(string: T) -> Template {
   Template::render("error", json!( { "error": format!("{}", string) } ))
@@ -78,17 +89,20 @@ fn home() -> Html<&'static str> {
   Html(INDEX)
 }
 
+/*
 fn redirect(link: String) -> Response<'static> {
   Response::build()
   .status(Status::SeeOther)
   .header(header::Location(link))
   .finalize()
 }
-
+*/
 fn handle_diwk_error(error: DIWKError) -> Custom<Template> {
   match error {
     DIWKError::NotFound => Custom(Status::NotFound, return_error("Not Found")),
-    DIWKError::DieselError(x) => Custom(Status::InternalServerError, return_error(x))
+    DIWKError::DieselError(x) => Custom(Status::InternalServerError, return_error(x)),
+    DIWKError::IncorrectPassword => Custom(Status::Unauthorized, return_error("Wrong password"))
+    
   }
 }
 
@@ -115,7 +129,10 @@ fn in_common(id: i32, integer: i64) -> Result<Vec<String>, DIWKError> {
 fn started(id: i32) -> TemplateResponder {
   match get_session(id) {
     Ok(result) => {
-      if result.done == true {
+      if result.write_pass == -1 {
+        Ok(Template::render("view_session", json!({ "id": id, "method": "read_pass", "do": "view the session results." })))
+        /*
+        
         match in_common(result.chart_id, result.opinion) {
           Ok(x) => {
             println!("{:?}", x);
@@ -129,11 +146,74 @@ fn started(id: i32) -> TemplateResponder {
           Ok(x) => Ok(Template::render("play", &x)),
           Err(x) => Err(handle_diwk_error(x))
         }
-      }
+      */} else { Ok(Template::render("view_session", json!({ "id": id, "method": "write_pass", "do": "enter the session." }))) }
     },
     Err(x) => Err(handle_diwk_error(x))
   }
 }
+
+#[derive(FromForm)]
+struct WriteOrRead { password: i32, method: String }
+
+#[post("/view/<id>", data="<input>", rank=2)]
+fn write_pass(id: i32, input: Form<WriteOrRead>) -> TemplateResponder {
+  match get_session(id) {
+    Ok(result) => {
+      if input.get().method == String::from("write_pass") {
+        if result.write_pass == input.get().password {
+          match get_chart_with_id(result.chart_id) {
+            Ok(x) => Ok(Template::render("play", json!({ "title": x.title, "description": x.description, "opinions": x.opinions, "password": result.write_pass }))),
+            Err(x) => Err(handle_diwk_error(x))
+          }
+        } else {
+          Err(handle_diwk_error(DIWKError::IncorrectPassword))
+        }
+
+        } else if input.get().method == String::from("read_pass") {
+            if result.read_pass == input.get().password {
+              match in_common(result.chart_id, result.opinion) {
+                Ok(last) => {
+                  let connection = start_connection();
+                  match diesel::delete(opinionsessions::table.filter(opinionsessions::columns::id.eq(result.id))).execute(&connection) {
+                    Ok(_) => Ok(Template::render("results", json!({ "answers": last }))),
+                    Err(x) => Err(handle_diwk_error(DIWKError::DieselError(x)))
+                  }
+                },
+                Err(x) => Err(handle_diwk_error(x))
+              }
+            } else {
+              Err(handle_diwk_error(DIWKError::IncorrectPassword))
+            
+
+            }
+        } else {
+          Err(handle_diwk_error(DIWKError::NotFound))
+        }
+    },
+    Err(err) => Err(handle_diwk_error(err))
+  }
+}
+
+/*#[derive(FromForm)]
+struct Read { read_pass: i32 }
+
+#[post("/view/<id>", data="<read>", rank=3)]
+fn read_pass(id: i32, read: Form<Read>) -> TemplateResponder {
+  match get_session(id) {
+    Ok(result) => {
+      if result.read_pass == read.get().read_pass {
+        match in_common(result.chart_id, result.opinion) {
+          Ok(x) => Ok(Template::render("answers", json!({ "answers": x }))),
+          Err(x) => Err(handle_diwk_error(x))
+        }
+      } else {
+        Err(handle_diwk_error(DIWKError::IncorrectPassword))
+      }
+    },
+    Err(x) =>Err(handle_diwk_error(x))
+  }
+}
+*/
 
 //makeshift bitfield
 fn integerify(bools: Vec<bool>, length: usize) -> Option<i64> {
@@ -182,17 +262,24 @@ fn search_from_id(id_search: Form<ID>) -> TemplateResponder {
   }
 }
 
+#[derive(Deserialize)]
+struct PlaySubmission {
+  result: Vec<bool>,
+  write_pass: i32
+}
 
 #[post("/view/<id>", format="application/json", data="<checks>")]
-fn answer(checks: Json<Vec<bool>>, id: i32) -> TemplateResponder {
-  let inner = checks.into_inner();
+fn answer(checks: Json<PlaySubmission>, id: i32) -> TemplateResponder {
+  let inside = checks.into_inner();
   match get_session(id) {
     Err(error) => Err(handle_diwk_error(error)),
     Ok(result) => {
-      if result.done == true {
+      if result.write_pass == -1 {
         return Err(Custom(Status::BadRequest, return_error("This game has already finished.")));
+      } else if result.write_pass != inside.write_pass {
+        return Err(handle_diwk_error(DIWKError::IncorrectPassword))
       };
-      match integerify(inner, result.max_checks as usize) {
+      match integerify(inside.result, result.max_checks as usize) {
         None => Err(Custom(Status::BadRequest, return_error("You have selected over the maximum amount of checks. Please refresh and try again."))),
         Some(integer) => {
           let connection = start_connection();
@@ -200,7 +287,7 @@ fn answer(checks: Json<Vec<bool>>, id: i32) -> TemplateResponder {
             let combined = (result.opinion & integer) & std::i64::MAX;
             match in_common(result.chart_id, combined) {
 
-              Ok(strings) => match diesel::update(opinionsessions::table.filter(opinionsessions::columns::id.eq(result.id))).set((opinionsessions::columns::done.eq(true), opinionsessions::columns::opinion.eq(combined))).get_result::<OpinionSessionQuery>(&connection) {
+              Ok(strings) => match diesel::update(opinionsessions::table.filter(opinionsessions::columns::id.eq(result.id))).set((opinionsessions::columns::write_pass.eq(-1), opinionsessions::columns::opinion.eq(combined))).get_result::<OpinionSessionQuery>(&connection) {
                 Ok(_) => Ok(Template::render("results", json!({ "answers": strings }))),
                 Err(x) => Err(Custom(Status::InternalServerError, return_error(x)))
               },
@@ -208,8 +295,8 @@ fn answer(checks: Json<Vec<bool>>, id: i32) -> TemplateResponder {
             }
                 
           } else {
-            match diesel::update(opinionsessions::table.filter(opinionsessions::columns::id.eq(result.id))).set((opinionsessions::columns::opinion.eq(integer))).get_result::<OpinionSessionQuery>(&connection) {
-              Ok(_) => Ok(Template::render("answered", &result)),
+            match diesel::update(opinionsessions::table.filter(opinionsessions::columns::id.eq(result.id))).set((opinionsessions::columns::opinion.eq(integer), opinionsessions::columns::read_pass.eq(get_rand()))).get_result::<OpinionSessionQuery>(&connection) {
+              Ok(x) => Ok(Template::render("answered", &x)),
               Err(x) => Err(Custom(Status::InternalServerError, return_error(x)))
             }
           } 
@@ -236,18 +323,19 @@ fn start_game_with_id(id: i32) -> Template {
 }
 
 #[post("/session", data = "<form>")]
-fn actually_start_game(form: Form<OpinionSessionForm>) -> RedirectResponder {
-  let value = form.into_inner();
+fn actually_start_game(form: Form<OpinionSessionForm>) -> TemplateResponder {
+  let mut value = form.into_inner();
   match get_chart_with_id(value.chart_id) {
     Ok(_) => {
       let connection = start_connection();
+      value.write_pass = get_rand();
       match diesel::insert(&value).into(opinionsessions::table).get_result::<OpinionSessionQuery>(&connection) {
-        Ok(x) => Ok(redirect(format!("/view/{}", x.id))),
+        Ok(x) => Ok(Template::render("view_session", json!({ "id": x.id, "pass": value.write_pass, "method": "write_pass" }))),
         Err(x) => Err(Custom(Status::InternalServerError, return_error(x)))
       } 
 
     },
-    Err(_) => Err(Custom(Status::UnprocessableEntity, return_error("Not Found")))
+    Err(_) => Err(Custom(Status::NotFound, return_error("Not Found")))
   } 
 }
 
@@ -291,6 +379,7 @@ struct OpinionChartSQL {
 struct OpinionSessionForm {
   chart_id: i32,
   max_checks: i16,
+  write_pass: i32
 }
 
 #[derive(Debug, Queryable, Serialize, AsChangeset)]
@@ -300,15 +389,40 @@ struct OpinionSessionQuery {
   chart_id: i32,
   max_checks: i16,
   opinion: i64,
-  done: bool
+  read_pass: i32,
+  write_pass: i32,
+  creation_time: i64
 }
 
 fn main() {
+  thread::spawn(move || {
+    
+    let one_hour = Duration::new(60*60, 0);
+    loop {
+      while {
+        let connection = start_connection();
+        let twenty_four_hours_ago = (SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("unreachable really")
+        .as_secs() * 1000) - (TWENTY_FOUR_HOURS) as i64;
 
+        match diesel::delete(opinionsessions::table.filter(opinionsessions::columns::creation_time.lt(twenty_four_hours_ago))).execute(&connection) {
+          Ok(_) => { println!("delet"); 0 },
+          Err(x) => {
+            println!("{}", x);
+            0
+          }
+        };
+        false
+      } {}
 
-    dotenv().ok();
-    rocket::ignite()
-    .mount("/", routes![home, started, create, post_create, start_game, start_game_with_id, actually_start_game, answer, search, search_from_keyword, search_from_id])
-    .attach(Template::fairing())
-    .launch();
+      thread::sleep(one_hour);
+
+    }
+  });
+  dotenv().ok();
+  rocket::ignite()
+  .mount("/", routes![home, started, create, post_create, start_game, start_game_with_id, actually_start_game, answer, search, search_from_keyword, search_from_id, write_pass])
+  .attach(Template::fairing())
+  .launch();
 }
