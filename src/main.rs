@@ -17,9 +17,7 @@ extern crate rand;
 use rocket_contrib::{ Template, Json };
 use rocket::response::content::Html;
 use rocket::response::status::Custom;
-//use rocket::response::Response;
 use rocket::http::Status;
-//use rocket::http::hyper::header;
 use diesel::pg::PgConnection;
 use diesel::Connection;
 use diesel::prelude::*;
@@ -32,7 +30,6 @@ use std::time::{ SystemTime, Duration, UNIX_EPOCH };
 
 type CustomErr = Custom<Template>;
 type TemplateResponder = Result<Template, CustomErr>;
-//type RedirectResponder = Result<Response<'static>, CustomErr>;
 
 enum DIWKError {
   DieselError(diesel::result::Error),
@@ -89,14 +86,6 @@ fn home() -> Html<&'static str> {
   Html(INDEX)
 }
 
-/*
-fn redirect(link: String) -> Response<'static> {
-  Response::build()
-  .status(Status::SeeOther)
-  .header(header::Location(link))
-  .finalize()
-}
-*/
 fn handle_diwk_error(error: DIWKError) -> Custom<Template> {
   match error {
     DIWKError::NotFound => Custom(Status::NotFound, return_error("Not Found")),
@@ -131,22 +120,7 @@ fn started(id: i32) -> TemplateResponder {
     Ok(result) => {
       if result.write_pass == -1 {
         Ok(Template::render("view_session", json!({ "id": id, "method": "read_pass", "do": "view the session results." })))
-        /*
-        
-        match in_common(result.chart_id, result.opinion) {
-          Ok(x) => {
-            println!("{:?}", x);
-            Ok(Template::render("results", json!({ "answers": x })))
-
-          },
-          Err(x) => Err(handle_diwk_error(x))
-        }
-      } else {
-        match get_chart_with_id(result.chart_id) {
-          Ok(x) => Ok(Template::render("play", &x)),
-          Err(x) => Err(handle_diwk_error(x))
-        }
-      */} else { Ok(Template::render("view_session", json!({ "id": id, "method": "write_pass", "do": "enter the session." }))) }
+      } else { Ok(Template::render("view_session", json!({ "id": id, "method": "write_pass", "do": "enter the session." }))) }
     },
     Err(x) => Err(handle_diwk_error(x))
   }
@@ -193,27 +167,6 @@ fn write_pass(id: i32, input: Form<WriteOrRead>) -> TemplateResponder {
     Err(err) => Err(handle_diwk_error(err))
   }
 }
-
-/*#[derive(FromForm)]
-struct Read { read_pass: i32 }
-
-#[post("/view/<id>", data="<read>", rank=3)]
-fn read_pass(id: i32, read: Form<Read>) -> TemplateResponder {
-  match get_session(id) {
-    Ok(result) => {
-      if result.read_pass == read.get().read_pass {
-        match in_common(result.chart_id, result.opinion) {
-          Ok(x) => Ok(Template::render("answers", json!({ "answers": x }))),
-          Err(x) => Err(handle_diwk_error(x))
-        }
-      } else {
-        Err(handle_diwk_error(DIWKError::IncorrectPassword))
-      }
-    },
-    Err(x) =>Err(handle_diwk_error(x))
-  }
-}
-*/
 
 //makeshift bitfield
 fn integerify(bools: Vec<bool>, length: usize) -> Option<i64> {
