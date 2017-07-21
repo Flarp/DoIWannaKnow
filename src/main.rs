@@ -354,10 +354,10 @@ fn main() {
     loop {
       while {
         let connection = start_connection();
-        let twenty_four_hours_ago = (SystemTime::now()
+        let twenty_four_hours_ago = ((SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("unreachable really")
-        .as_secs() * 1000) - (TWENTY_FOUR_HOURS) as i64;
+        .as_secs() * 1000) - (TWENTY_FOUR_HOURS)) as i64;
 
         match diesel::delete(opinionsessions::table.filter(opinionsessions::columns::creation_time.lt(twenty_four_hours_ago))).execute(&connection) {
           Ok(_) => { println!("delet"); 0 },
