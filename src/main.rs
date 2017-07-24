@@ -242,7 +242,7 @@ fn answer(checks: Json<PlaySubmission>, id: i32) -> TemplateResponder {
 
               Ok(strings) => match diesel::update(opinionsessions::table.filter(opinionsessions::columns::id.eq(result.id))).set((opinionsessions::columns::write_pass.eq(-1), opinionsessions::columns::opinion.eq(combined))).get_result::<OpinionSessionQuery>(&connection) {
                 Ok(_) => Ok(Template::render("results", json!({ "answers": strings }))),
-                Err(x) => Err(Custom(Status::InternalServerError, return_error(x)))
+                Err(x) => Err(handle_diwk_error(DIWKError::DieselError(x)))
               },
               Err(err) => Err(handle_diwk_error(err))
             }
@@ -250,7 +250,7 @@ fn answer(checks: Json<PlaySubmission>, id: i32) -> TemplateResponder {
           } else {
             match diesel::update(opinionsessions::table.filter(opinionsessions::columns::id.eq(result.id))).set((opinionsessions::columns::opinion.eq(integer), opinionsessions::columns::read_pass.eq(get_rand()))).get_result::<OpinionSessionQuery>(&connection) {
               Ok(x) => Ok(Template::render("answered", &x)),
-              Err(x) => Err(Custom(Status::InternalServerError, return_error(x)))
+              Err(x) => Err(handle_diwk_error(DIWKError::DieselError(x)))
             }
           } 
         }
@@ -284,11 +284,11 @@ fn actually_start_game(form: Form<OpinionSessionForm>) -> TemplateResponder {
       value.write_pass = get_rand();
       match diesel::insert(&value).into(opinionsessions::table).get_result::<OpinionSessionQuery>(&connection) {
         Ok(x) => Ok(Template::render("view_session", json!({ "id": x.id, "pass": value.write_pass, "method": "write_pass" }))),
-        Err(x) => Err(Custom(Status::InternalServerError, return_error(x)))
+        Err(x) => Err(handle_diwk_error(DIWKError::DieselError(x)))
       } 
 
     },
-    Err(_) => Err(Custom(Status::NotFound, return_error("Not Found")))
+    Err(x) => Err(handle_diwk_error(x))
   } 
 }
 
@@ -300,7 +300,7 @@ fn post_create(upload: Json<OpinionChartJSON>) -> Result<Template, Custom<Templa
   println!("{:?}", form);
   match diesel::insert(&form).into(opinioncharts::table).get_result::<OpinionChartSQL>(&connection) {
     Ok(x) => Ok(Template::render("created", &x)),
-    Err(x) => Err(Custom(Status::InternalServerError, return_error(x))) 
+    Err(x) => Err(handle_diwk_error(DIWKError::DieselError(x)))
   }
 
 }
