@@ -1,1 +1,1 @@
-web: ./target/release/doiwannaknow
+web: ROCKET_PORT=$PORT ROCKET_ENV=prod ./target/release/doiwannaknow
