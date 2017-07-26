@@ -2,6 +2,7 @@
 name = "doiwannaknow"
 version = "0.1.0"
 authors = ["Flarp <flurpdadurp@gmail.com>"]
+build = "build.rs"
 
 [dependencies]
 rocket = "0.3.0"

@@ -306,7 +306,7 @@ fn post_create(upload: Json<OpinionChartJSON>) -> Result<Template, Custom<Templa
 
 fn start_connection() -> PgConnection {
   let connection = PgConnection::establish(dotenv!("DATABASE_URL")).ok().unwrap();
-  embedded_migrations::run(&connection).ok().unwrap();
+  //embedded_migrations::run(&connection).ok().unwrap();
   connection
 }
 
