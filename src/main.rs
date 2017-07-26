@@ -1,6 +1,7 @@
 #![feature(plugin, use_extern_macros, custom_derive)]
-#![plugin(rocket_codegen)]
 #![plugin(dotenv_macros)]
+#![plugin(rocket_codegen)]
+//#![plugin(dotenv_macros)]
 //#![feature(trace_macros)]
 //trace_macros!(true);
 
@@ -136,7 +137,7 @@ fn write_pass(id: i32, input: Form<WriteOrRead>) -> TemplateResponder {
       if input.get().method == String::from("write_pass") {
         if result.write_pass == input.get().password {
           match get_chart_with_id(result.chart_id) {
-            Ok(x) => Ok(Template::render("play", json!({ "title": x.title, "description": x.description, "opinions": x.opinions, "password": result.write_pass }))),
+            Ok(x) => Ok(Template::render("play", json!({ "title": x.title, "description": x.description, "opinions": x.opinions, "password": result.write_pass, "max_checks": result.max_checks }))),
             Err(x) => Err(handle_diwk_error(x))
           }
         } else {
@@ -259,7 +260,6 @@ fn answer(checks: Json<PlaySubmission>, id: i32) -> TemplateResponder {
   }
 }
 
-
 #[get("/create")]
 fn create() -> Html<&'static str> {
   Html(CREATE)
@@ -291,7 +291,6 @@ fn actually_start_game(form: Form<OpinionSessionForm>) -> TemplateResponder {
     Err(x) => Err(handle_diwk_error(x))
   } 
 }
-
 
 #[post("/create", format="application/json", data="<upload>")]
 fn post_create(upload: Json<OpinionChartJSON>) -> Result<Template, Custom<Template>> {
