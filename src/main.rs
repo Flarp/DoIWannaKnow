@@ -43,7 +43,7 @@ const CREATE: &'static str = include_str!("create.html");
 const SEARCH: &'static str = include_str!("search.html");
 const TWENTY_FOUR_HOURS: u64 = 24 * 60 * 60 * 1000;
 
-diesel::embed_migrations!("migrations");
+//diesel::embed_migrations!("migrations");
 diesel::infer_schema!("dotenv:DATABASE_URL");
 
 fn get_rand() -> i32 {
