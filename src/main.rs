@@ -1,9 +1,6 @@
 #![feature(plugin, use_extern_macros, custom_derive)]
 #![plugin(dotenv_macros)]
 #![plugin(rocket_codegen)]
-//#![plugin(dotenv_macros)]
-//#![feature(trace_macros)]
-//trace_macros!(true);
 
 #[macro_use] extern crate diesel;
 extern crate rocket;
@@ -44,7 +41,6 @@ const CREATE: &'static str = include_str!("create.html");
 const SEARCH: &'static str = include_str!("search.html");
 const TWENTY_FOUR_HOURS: u64 = 24 * 60 * 60 * 1000;
 
-//diesel::embed_migrations!("migrations");
 diesel::infer_schema!("dotenv:DATABASE_URL");
 
 fn get_rand() -> i32 {
@@ -116,22 +112,6 @@ fn in_common(id: i32, integer: i64) -> Result<Vec<String>, DIWKError> {
 
 }
 
-/*
-#[get("/view/<id>")]
-fn started(id: i32) -> TemplateResponder {
-  match get_session(id) {
-    Ok(result) => {
-      if result.write_pass == -1 {
-        Ok(Template::render("view_session", json!({ "id": id, "method": "read_pass", "do": "view the session results." })))
-      } else { Ok(Template::render("view_session", json!({ "id": id, "method": "write_pass", "do": "enter the session." }))) }
-    },
-    Err(x) => Err(handle_diwk_error(x))
-  }
-}
-*/
-//#[derive(FromForm)]
-//struct WriteOrRead { password: i32, method: String }
-
 #[derive(FromForm)]
 struct Write { write_pass: i32 }
 
@@ -139,38 +119,14 @@ struct Write { write_pass: i32 }
 fn write_pass(id: i32, write_password: Write) -> TemplateResponder {
   match get_session(id) {
     Ok(result) => {
-      //if input.get().method == String::from("write_pass") {
-        if result.write_pass == write_password.write_pass {
-          match get_chart_with_id(result.chart_id) {
-            Ok(x) => Ok(Template::render("play", json!({ "title": x.title, "description": x.description, "opinions": x.opinions, "password": result.write_pass, "max_checks": result.max_checks }))),
-            Err(x) => Err(handle_diwk_error(x))
-          }
-        } else {
-          Err(handle_diwk_error(DIWKError::IncorrectPassword))
+      if result.write_pass == write_password.write_pass {
+        match get_chart_with_id(result.chart_id) {
+          Ok(x) => Ok(Template::render("play", json!({ "title": x.title, "description": x.description, "opinions": x.opinions, "password": result.write_pass, "max_checks": result.max_checks }))),
+          Err(x) => Err(handle_diwk_error(x))
         }
-        /*
-        } else if input.get().method == String::from("read_pass") {
-            if result.read_pass == input.get().password {
-              match in_common(result.chart_id, result.opinion) {
-                Ok(last) => {
-                  let connection = start_connection();
-                  match diesel::delete(opinionsessions::table.filter(opinionsessions::columns::id.eq(result.id))).execute(&connection) {
-                    Ok(_) => Ok(Template::render("results", json!({ "answers": last }))),
-                    Err(x) => Err(handle_diwk_error(DIWKError::DieselError(x)))
-                  }
-                },
-                Err(x) => Err(handle_diwk_error(x))
-              }
-            } else {
-              Err(handle_diwk_error(DIWKError::IncorrectPassword))
-            
-
-            }
-            
-        } else {
-          Err(handle_diwk_error(DIWKError::NotFound))
-        }
-        */
+      } else {
+        Err(handle_diwk_error(DIWKError::IncorrectPassword))
+      }
     },
     Err(err) => Err(handle_diwk_error(err))
   }
@@ -319,7 +275,7 @@ fn actually_start_game(form: Form<OpinionSessionForm>) -> Result<rocket::respons
       let connection = start_connection();
       value.write_pass = get_rand();
       match diesel::insert(&value).into(opinionsessions::table).get_result::<OpinionSessionQuery>(&connection) {
-        Ok(x) => /*Ok(Template::render("view_session", json!({ "id": x.id, "pass": value.write_pass, "method": "write_pass" })))*/ {
+        Ok(x) => {
           Ok(rocket::response::Response::build()
           .status(Status::SeeOther)
           .header(rocket::http::hyper::header::Location(format!("/view/{}?write_pass={}", x.id, value.write_pass)))
@@ -347,7 +303,6 @@ fn post_create(upload: Json<OpinionChartJSON>) -> Result<Template, Custom<Templa
 
 fn start_connection() -> PgConnection {
   let connection = PgConnection::establish(dotenv!("DATABASE_URL")).ok().unwrap();
-  //embedded_migrations::run(&connection).ok().unwrap();
   connection
 }
 
