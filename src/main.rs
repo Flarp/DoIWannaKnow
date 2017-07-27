@@ -35,7 +35,8 @@ type TemplateResponder = Result<Template, CustomErr>;
 enum DIWKError {
   DieselError(diesel::result::Error),
   NotFound,
-  IncorrectPassword
+  IncorrectPassword,
+  NotFinished
 }
 
 const INDEX: &'static str = include_str!("index.html");
@@ -91,8 +92,8 @@ fn handle_diwk_error(error: DIWKError) -> Custom<Template> {
   match error {
     DIWKError::NotFound => Custom(Status::NotFound, return_error("Not Found")),
     DIWKError::DieselError(x) => Custom(Status::InternalServerError, return_error(x)),
-    DIWKError::IncorrectPassword => Custom(Status::Unauthorized, return_error("Wrong password"))
-    
+    DIWKError::IncorrectPassword => Custom(Status::Unauthorized, return_error("Wrong password")),
+    DIWKError::NotFinished => Custom(Status::BadRequest, return_error("Game has not finished"))
   }
 }
 
@@ -115,6 +116,7 @@ fn in_common(id: i32, integer: i64) -> Result<Vec<String>, DIWKError> {
 
 }
 
+/*
 #[get("/view/<id>")]
 fn started(id: i32) -> TemplateResponder {
   match get_session(id) {
@@ -126,16 +128,19 @@ fn started(id: i32) -> TemplateResponder {
     Err(x) => Err(handle_diwk_error(x))
   }
 }
+*/
+//#[derive(FromForm)]
+//struct WriteOrRead { password: i32, method: String }
 
 #[derive(FromForm)]
-struct WriteOrRead { password: i32, method: String }
+struct Write { write_pass: i32 }
 
-#[post("/view/<id>", data="<input>", rank=2)]
-fn write_pass(id: i32, input: Form<WriteOrRead>) -> TemplateResponder {
+#[get("/view/<id>?<write_password>")]
+fn write_pass(id: i32, write_password: Write) -> TemplateResponder {
   match get_session(id) {
     Ok(result) => {
-      if input.get().method == String::from("write_pass") {
-        if result.write_pass == input.get().password {
+      //if input.get().method == String::from("write_pass") {
+        if result.write_pass == write_password.write_pass {
           match get_chart_with_id(result.chart_id) {
             Ok(x) => Ok(Template::render("play", json!({ "title": x.title, "description": x.description, "opinions": x.opinions, "password": result.write_pass, "max_checks": result.max_checks }))),
             Err(x) => Err(handle_diwk_error(x))
@@ -143,7 +148,7 @@ fn write_pass(id: i32, input: Form<WriteOrRead>) -> TemplateResponder {
         } else {
           Err(handle_diwk_error(DIWKError::IncorrectPassword))
         }
-
+        /*
         } else if input.get().method == String::from("read_pass") {
             if result.read_pass == input.get().password {
               match in_common(result.chart_id, result.opinion) {
@@ -161,11 +166,42 @@ fn write_pass(id: i32, input: Form<WriteOrRead>) -> TemplateResponder {
             
 
             }
+            
         } else {
           Err(handle_diwk_error(DIWKError::NotFound))
         }
+        */
     },
     Err(err) => Err(handle_diwk_error(err))
+  }
+}
+
+#[derive(FromForm)]
+struct Read { read_pass: i32 }
+
+#[get("/view/<id>?<read_pass>", rank=2)]
+fn read_pass(id: i32, read_pass: Read) -> TemplateResponder {
+  match get_session(id) {
+    Ok(session) => {
+      if session.write_pass != -1 {
+        return Err(handle_diwk_error(DIWKError::NotFinished));
+      }
+      if session.read_pass == read_pass.read_pass {
+        match in_common(session.chart_id, session.opinion) {
+          Ok(results) => {
+            let connection = start_connection();
+            match diesel::delete(opinionsessions::table.filter(opinionsessions::columns::id.eq(session.id))).execute(&connection) {
+              Ok(_) => Ok(Template::render("results", json!({ "answers": results }))),
+              Err(x) => Err(handle_diwk_error(DIWKError::DieselError(x)))
+            }
+          },
+          Err(x) => Err(handle_diwk_error(x))
+        }
+      } else {
+        Err(handle_diwk_error(DIWKError::IncorrectPassword))
+      }
+    },
+    Err(x) => Err(handle_diwk_error(x))
   }
 }
 
@@ -276,14 +312,19 @@ fn start_game_with_id(id: i32) -> Template {
 }
 
 #[post("/session", data = "<form>")]
-fn actually_start_game(form: Form<OpinionSessionForm>) -> TemplateResponder {
+fn actually_start_game(form: Form<OpinionSessionForm>) -> Result<rocket::response::Response, Custom<Template>> {
   let mut value = form.into_inner();
   match get_chart_with_id(value.chart_id) {
     Ok(_) => {
       let connection = start_connection();
       value.write_pass = get_rand();
       match diesel::insert(&value).into(opinionsessions::table).get_result::<OpinionSessionQuery>(&connection) {
-        Ok(x) => Ok(Template::render("view_session", json!({ "id": x.id, "pass": value.write_pass, "method": "write_pass" }))),
+        Ok(x) => /*Ok(Template::render("view_session", json!({ "id": x.id, "pass": value.write_pass, "method": "write_pass" })))*/ {
+          Ok(rocket::response::Response::build()
+          .status(Status::SeeOther)
+          .header(rocket::http::hyper::header::Location(format!("/view/{}?write_pass={}", x.id, value.write_pass)))
+          .finalize())
+        },
         Err(x) => Err(handle_diwk_error(DIWKError::DieselError(x)))
       } 
 
@@ -374,7 +415,7 @@ fn main() {
   });
   dotenv().ok();
   rocket::ignite()
-  .mount("/", routes![home, started, create, post_create, start_game, start_game_with_id, actually_start_game, answer, search, search_from_keyword, search_from_id, write_pass])
+  .mount("/", routes![home, create, post_create, start_game, start_game_with_id, actually_start_game, answer, search, search_from_keyword, search_from_id, read_pass, write_pass])
   .attach(Template::fairing())
   .launch();
 }

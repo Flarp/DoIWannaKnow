@@ -1,5 +1,5 @@
 <html>
   <body>
-    <p>Now that you've answered the chart, share it with a friend and see what you two have in common! Send them <a href="/view/{{ id }}">this link</a> They will need a password, which is {{ write_pass }}. In order to see the results once they are done, you will need your own password, which is {{ read_pass }}.
+    <p>Now that you've answered the chart, share it with a friend and see what you two have in common! Send them <a href="/view/{{ id }}?write_pass={{ write_pass }}">this link</a>. In order to see the results once they are done, you will need your own link, which is <a href="/view/{{ id }}?read_pass={{ read_pass }}">here</a>.
   </body>
 </html>

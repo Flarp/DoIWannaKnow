@@ -4,8 +4,13 @@
       <form action="/view/{{ id }}" method="POST">
         <input type="number" name="password" placeholder="Input password to {{ do }}" {{ #if pass }} value="{{ pass }}" {{ /if }}>
         <input type="hidden" name="method" value="{{ method }}">
-        <input type="submit">
+        <input type="submit" id="submit">
       </form>
     </center>
+    {{ #if pass }}
+    <script>
+      document.getElementById('submit').click()
+    </script>
+    {{ /if }}
   </body>
 </html>
