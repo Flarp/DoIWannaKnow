@@ -1,24 +1,30 @@
 <html>
   <body>
-    <center id='upload'>
+    <center id='upload'>  
+    <h1>Create a Chart</h1>
+    <br><br>
       <input type='text' id="title" placeholder="Title">
       <input type='text' id="description" placeholder="Description">
+      <br>
+      <br>
       <div id='opinions'>
         <input type='text' placeholder="Opinion here..."> 
       </div>
       <br id='break'>
-      <button id='add_more' type="button">Add more</button>
+      <button id='add_more' type="button">Add Another Opinion</button>
       <button id='submit'>Submit</button>
     </center>
 
   <script>
   var current = 0;
+  const opinions = document.getElementById('opinions')
   document.getElementById('add_more').onclick = e => {
     current++
     const next_input = document.createElement('input')
     next_input.type = 'text'
     next_input.placeholder = 'Opinion here...'
-    document.getElementById('opinions').appendChild(next_input)
+    opinions.appendChild(document.createElement('br'))
+    opinions.appendChild(next_input)
   }
 
   document.getElementById('submit').onclick = e => {
