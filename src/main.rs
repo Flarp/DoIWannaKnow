@@ -195,6 +195,7 @@ fn search_from_keyword(keyword: Form<Keyword>) -> TemplateResponder {
   }
 }
 
+/*
 #[derive(FromForm)]
 struct ID { number: i32 }
 
@@ -207,6 +208,7 @@ fn search_from_id(id_search: Form<ID>) -> TemplateResponder {
 
   }
 }
+*/
 
 #[derive(Deserialize)]
 struct PlaySubmission {
@@ -290,10 +292,17 @@ fn actually_start_game(form: Form<OpinionSessionForm>) -> Result<rocket::respons
 }
 
 #[post("/create", format="application/json", data="<upload>")]
-fn post_create(upload: Json<OpinionChartJSON>) -> Result<Template, Custom<Template>> {
+fn post_create(upload: Json<OpinionChartJSON>) -> TemplateResponder {
   let form = upload.into_inner();
   let connection = start_connection();
-  println!("{:?}", form);
+  if form.opinions.len() > 63 {
+    return Err(Custom(Status::BadRequest, return_error("The form provided is too long.")));
+  }
+  for z in form.opinions.iter() {
+    if z.len() > 127 {
+      return Err(Custom(Status::BadRequest, return_error("One or more form inputs are too long.")));
+    }
+  }
   match diesel::insert(&form).into(opinioncharts::table).get_result::<OpinionChartSQL>(&connection) {
     Ok(x) => Ok(Template::render("created", &x)),
     Err(x) => Err(handle_diwk_error(DIWKError::DieselError(x)))
