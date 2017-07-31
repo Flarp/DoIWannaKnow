@@ -195,21 +195,6 @@ fn search_from_keyword(keyword: Form<Keyword>) -> TemplateResponder {
   }
 }
 
-/*
-#[derive(FromForm)]
-struct ID { number: i32 }
-
-#[post("/search/id", data="<id_search>")]
-fn search_from_id(id_search: Form<ID>) -> TemplateResponder {
-  let connection = start_connection();
-  match opinioncharts::table.filter(opinioncharts::columns::id.eq(id_search.get().number)).load::<OpinionChartSQL>(&connection) {
-    Ok(x) => Ok(Template::render("search_results", json!({ "results": x }))),
-    Err(x) => Err(handle_diwk_error(DIWKError::DieselError(x)))
-
-  }
-}
-*/
-
 #[derive(Deserialize)]
 struct PlaySubmission {
   result: Vec<bool>,
@@ -379,7 +364,7 @@ fn main() {
   });
   dotenv().ok();
   rocket::ignite()
-  .mount("/", routes![home, create, post_create, start_game, start_game_with_id, actually_start_game, answer, search, search_from_keyword, search_from_id, read_pass, write_pass])
+  .mount("/", routes![home, create, post_create, start_game, start_game_with_id, actually_start_game, answer, search, search_from_keyword, read_pass, write_pass])
   .attach(Template::fairing())
   .launch();
 }
