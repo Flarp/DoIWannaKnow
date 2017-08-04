@@ -24,13 +24,13 @@
       let last_bit = 0;
       for (let z = 0; z < result.length; z++) {
         last_bit = x[1] >>> 31
-        if (z >= 33) {
+        if (z >= 31) {
           x[0] <<= 1
           x[0] |= last_bit
         }
         x[1] <<= 1
         x[1] |= (result[z] === true ? 1 : 0)
-      } 
+      }
 
       let xml = new XMLHttpRequest()
       xml.open("POST", "/view/" + location.href.split("/").pop() , false)
