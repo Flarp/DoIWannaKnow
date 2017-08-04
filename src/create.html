@@ -37,10 +37,14 @@
     const xml = new XMLHttpRequest()
     xml.open("POST", "/create", false)
     xml.setRequestHeader("Content-Type", "application/json")
-    xml.send(JSON.stringify(obj))
+    try {
+      xml.send(JSON.stringify(obj))
 
-    document.getElementsByTagName("html")[0].innerHTML = xml.response
-
+      document.getElementsByTagName("html")[0].innerHTML = xml.response
+    } catch (e) {
+      alert("There was an error uploading your request")
+    }
+  
   }
   </script>
   </body>

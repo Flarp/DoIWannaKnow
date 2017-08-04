@@ -17,13 +17,24 @@
   </center>
   <script>
     document.getElementById("submit").onclick = _ => {
+      let x = [0, 0]
       let result = Array.from(document.getElementById("form").elements)
       .map(check => check.checked)
-      const submission = { result: result, write_pass: {{password}} }
+      
+      let last_bit = 0;
+      for (let z = 0; z < result.length; z++) {
+        last_bit = x[1] >>> 31
+        if (z >= 33) {
+          x[0] <<= 1
+          x[0] |= last_bit
+        }
+        x[1] <<= 1
+        x[1] |= (result[z] === true ? 1 : 0)
+      } 
+
       let xml = new XMLHttpRequest()
       xml.open("POST", "/view/" + location.href.split("/").pop() , false)
-      xml.setRequestHeader("Content-Type", "application/json")
-      xml.send(JSON.stringify(submission))
+      xml.send(new Uint32Array(x))
       document.getElementsByTagName("html")[0].innerHTML = xml.response
     }
   </script>
