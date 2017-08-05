@@ -207,22 +207,6 @@ fn read_pass(id: i32, read_pass: ReadPass) -> TemplateResponder {
   }
 }
 
-/*
-fn integerify(bools: Vec<bool>, length: usize) -> Option<i64> {
-  let mut real_length: usize = 0;
-  let mut num: i64 = 0;
-  for &x in bools.iter() {
-    num <<= 1;
-    if x == true {
-      real_length += 1;
-      num |= 1;
-    };
-  };
-  
-  if length >= real_length { Some(num | std::i64::MIN) } else { None }
-
-}
-*/
 #[get("/search")]
 fn search() -> Html<&'static str> {
   Html(include_str!("search.html"))
@@ -278,8 +262,7 @@ fn start_game_with_id(id: i32) -> Template {
 #[post("/session", data = "<form>")]
 fn actually_start_game(form: Form<OpinionSessionForm>) -> Result<rocket::response::Response, Custom<Template>> {
   let mut value = form.into_inner();
-  let chart = get_chart_with_id(value.chart_id);
-  diwk_try!(chart, true);
+  let chart = diwk_try!(get_chart_with_id(value.chart_id), true);
   let connection = diwk_try!(start_connection(), true);
   value.write_pass = get_rand();
   let result = diwk_try!(diesel::insert(&value).into(opinionsessions::table).get_result::<OpinionSessionQuery>(&connection), true);
