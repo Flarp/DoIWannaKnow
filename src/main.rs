@@ -262,7 +262,7 @@ fn start_game_with_id(id: i32) -> Template {
 #[post("/session", data = "<form>")]
 fn actually_start_game(form: Form<OpinionSessionForm>) -> Result<rocket::response::Response, Custom<Template>> {
   let mut value = form.into_inner();
-  let chart = diwk_try!(get_chart_with_id(value.chart_id), true);
+  diwk_try!(get_chart_with_id(value.chart_id), true);
   let connection = diwk_try!(start_connection(), true);
   value.write_pass = get_rand();
   let result = diwk_try!(diesel::insert(&value).into(opinionsessions::table).get_result::<OpinionSessionQuery>(&connection), true);
