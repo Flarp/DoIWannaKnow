@@ -88,8 +88,7 @@ macro_rules! diwk_try {
 fn parse_bytes(thing: rocket::data::Data) -> Result<i64, DIWKError> {
   let mut bytes = thing.open();
   let mut buffer = [0; 9];
-  let read = diwk_try!(bytes.read(&mut buffer), false);
-  if read != 8 {
+  if diwk_try!(bytes.read(&mut buffer), false) != 8 {
     return Err(DIWKError::InvalidRequestLength)
   } else {
     let mut num: i64 = 0;
