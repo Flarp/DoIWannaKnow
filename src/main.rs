@@ -1,7 +1,6 @@
 #![feature(plugin, use_extern_macros, custom_derive)]
 #![plugin(dotenv_macros)]
 #![plugin(rocket_codegen)]
-#![feature(trace_macros)]
 #[macro_use] extern crate diesel;
 extern crate rocket;
 extern crate rocket_contrib;
@@ -40,6 +39,7 @@ enum DIWKError {
   NotFinished,
   AlreadyFinished,
   InvalidRequestLength,
+  IOError(std::io::Error)
 }
 
 trait DIWKErrorHack {
@@ -64,6 +64,12 @@ impl DIWKErrorHack for DIWKError {
   }
 }
 
+impl DIWKErrorHack for std::io::Error {
+  fn get_diwk_error(self) -> DIWKError {
+    DIWKError::IOError(self)
+  }
+}
+
 macro_rules! diwk_try {
   ($test:expr, true) => {
     match $test {
@@ -80,33 +86,17 @@ macro_rules! diwk_try {
 }
 
 fn parse_bytes(thing: rocket::data::Data) -> Result<i64, DIWKError> {
-  let mut bytes = thing.open().bytes();
-  let mut arr_u32: [u8; 8] = [0,0,0,0,0,0,0,0];
-  for o in 0..8 {
-    match bytes.next() {
-      None => return Err(DIWKError::InvalidRequestLength),
-      Some(y) => {
-        match y {
-          Ok(z) => {
-            arr_u32[o] = z;
-          },
-          Err(_) => return Err(DIWKError::InvalidRequestLength)
-        } 
-      }
-    };
-  };
-  
-  match bytes.next() {
-    None => {
-      let mut num: i64 = 0;
-      let read_1 = LittleEndian::read_u32(&arr_u32[0..4]) as i64;
-      num |= read_1;
-      let read_2 = LittleEndian::read_u32(&arr_u32[4..8]) as i64;
-      num <<= 32;
-      num |= read_2;
-      Ok(num)
-    },
-    Some(_) => Err(DIWKError::InvalidRequestLength)
+  let mut bytes = thing.open();
+  let mut buffer = [0; 9];
+  let read = diwk_try!(bytes.read(&mut buffer), false);
+  if read != 8 {
+    return Err(DIWKError::InvalidRequestLength)
+  } else {
+    let mut num: i64 = 0;
+    num |= LittleEndian::read_u32(&mut buffer[0..4]) as i64;
+    num <<= 32;
+    num |= LittleEndian::read_u32(&mut buffer[4..8]) as i64;
+    Ok(num)
   }
 }
 
@@ -154,7 +144,8 @@ fn handle_diwk_error(error: DIWKError) -> Custom<Template> {
     DIWKError::NotFinished => Custom(Status::BadRequest, return_error("Game has not finished")),
     DIWKError::InvalidRequestLength => Custom(Status::BadRequest, return_error("Your request length is invalid")),
     DIWKError::DieselConnectionError(x) => Custom(Status::InternalServerError, return_error(x)),
-    DIWKError::AlreadyFinished => Custom(Status::BadRequest, return_error("Game has already finished"))
+    DIWKError::AlreadyFinished => Custom(Status::BadRequest, return_error("Game has already finished")),
+    DIWKError::IOError(x) => Custom(Status::InternalServerError, return_error(x))
   }
 }
 
