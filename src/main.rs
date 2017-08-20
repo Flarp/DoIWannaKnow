@@ -263,11 +263,8 @@ fn actually_start_game(form: Form<OpinionSessionForm>) -> Result<rocket::respons
 }
 
 #[post("/create", format="application/json", data="<upload>")]
-fn post_create(upload: Option<Json<OpinionChartJSON>>) -> TemplateResponder {
-  if upload.is_none() {
-    return Err(handle_diwk_error(DIWKError::InvalidRequestLength));
-  }
-  let form = upload.unwrap().into_inner();
+fn post_create(upload: Json<OpinionChartJSON>) -> TemplateResponder {
+  let form = upload.into_inner();
   let connection = diwk_try!(start_connection(), true);
   if form.opinions.len() > 63 {
     return Err(Custom(Status::BadRequest, return_error("The form provided is too long.")));
