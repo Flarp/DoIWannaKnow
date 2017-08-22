@@ -46,29 +46,20 @@ trait DIWKErrorHack {
   fn get_diwk_error(self) -> DIWKError;
 }
 
-impl DIWKErrorHack for diesel::result::Error {
-  fn get_diwk_error(self) -> DIWKError {
-    DIWKError::DieselError(self)
+macro_rules! impl_diwk_hack {
+  ($implementor:path, $($variant:path)*) => {
+    impl DIWKErrorHack for $implementor {
+      fn get_diwk_error(self) -> DIWKError {
+        $($variant)*(self)
+      }
+    }
   }
 }
 
-impl DIWKErrorHack for diesel::result::ConnectionError {
-  fn get_diwk_error(self) -> DIWKError {
-    DIWKError::DieselConnectionError(self)
-  }
-}
-
-impl DIWKErrorHack for DIWKError {
-  fn get_diwk_error(self) -> DIWKError {
-    self
-  }
-}
-
-impl DIWKErrorHack for std::io::Error {
-  fn get_diwk_error(self) -> DIWKError {
-    DIWKError::IOError(self)
-  }
-}
+impl_diwk_hack!(std::io::Error, DIWKError::IOError);
+impl_diwk_hack!(diesel::result::ConnectionError, DIWKError::DieselConnectionError);
+impl_diwk_hack!(diesel::result::Error, DIWKError::DieselError);
+impl_diwk_hack!(DIWKError, );
 
 macro_rules! diwk_try {
   ($test:expr, true) => {
