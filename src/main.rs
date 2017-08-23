@@ -78,16 +78,13 @@ macro_rules! diwk_try {
 
 fn parse_bytes(thing: rocket::data::Data) -> Result<i64, DIWKError> {
   let mut bytes = thing.open();
-  let mut buffer = [0; 9];
-  if diwk_try!(bytes.read(&mut buffer), false) != 8 {
-    return Err(DIWKError::InvalidRequestLength)
-  } else {
-    let mut num: i64 = 0;
-    num |= LittleEndian::read_u32(&mut buffer[0..4]) as i64;
-    num <<= 32;
-    num |= LittleEndian::read_u32(&mut buffer[4..8]) as i64;
-    Ok(num)
-  }
+  let mut buffer = [0; 8];
+  diwk_try!(bytes.read(&mut buffer), false);
+  let mut num: i64 = 0;
+  num |= LittleEndian::read_u32(&mut buffer[0..4]) as i64;
+  num <<= 32;
+  num |= LittleEndian::read_u32(&mut buffer[4..8]) as i64;
+  Ok(num)
 }
 
 const TWENTY_FOUR_HOURS: u64 = 24 * 60 * 60 * 1000;
@@ -126,7 +123,7 @@ fn home() -> Html<&'static str> {
   Html(include_str!("index.html"))
 }
 
-fn handle_diwk_error(error: DIWKError) -> Custom<Template> {
+fn handle_diwk_error(error: DIWKError) -> CustomErr {
   match error {
     DIWKError::NotFound => Custom(Status::NotFound, return_error("Not Found")),
     DIWKError::DieselError(x) => Custom(Status::InternalServerError, return_error(x)),
@@ -241,7 +238,7 @@ fn start_game_with_id(id: i32) -> Template {
 }
 
 #[post("/session", data = "<form>")]
-fn actually_start_game(form: Form<OpinionSessionForm>) -> Result<rocket::response::Response, Custom<Template>> {
+fn actually_start_game(form: Form<OpinionSessionForm>) -> Result<rocket::response::Response, CustomErr> {
   let mut value = form.into_inner();
   diwk_try!(get_chart_with_id(value.chart_id), true);
   let connection = diwk_try!(start_connection(), true);
@@ -258,7 +255,7 @@ fn post_create(upload: Json<OpinionChartJSON>) -> TemplateResponder {
   let form = upload.into_inner();
   let connection = diwk_try!(start_connection(), true);
   if form.opinions.len() > 63 {
-    return Err(Custom(Status::BadRequest, return_error("The form provided is too long.")));
+    return Err(handle_diwk_error(DIWKError::InvalidRequestLength));
   }
   let x = diwk_try!(diesel::insert(&form).into(opinioncharts::table).get_result::<OpinionChartSQL>(&connection), true);
   Ok(Template::render("created", &x))
