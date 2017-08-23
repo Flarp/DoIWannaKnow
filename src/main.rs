@@ -137,12 +137,12 @@ fn handle_diwk_error(error: DIWKError) -> CustomErr {
 }
 
 fn in_common(id: i32, integer: i64) -> Result<Vec<String>, DIWKError> {
-  let data = diwk_try!(get_chart_with_id(id), false);
+  let mut data = diwk_try!(get_chart_with_id(id), false);
   let mut answers: Vec<String> = Vec::new();
   let mut mixed: i64 = integer.clone();
-  for x in data.opinions.iter().rev() {
+  while let Some(x) = data.opinions.pop() {
     if mixed & 1 == 1 {
-      answers.push(x.clone());
+      answers.push(x);
     }
     mixed >>= 1;
   }
