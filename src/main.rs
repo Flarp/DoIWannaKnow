@@ -1,4 +1,4 @@
-#!feature(plugin, use_extern_macros, custom_derive)]
+#![feature(plugin, use_extern_macros, custom_derive)]
 #![plugin(dotenv_macros)]
 #![plugin(rocket_codegen)]
 #[macro_use] extern crate diesel;
