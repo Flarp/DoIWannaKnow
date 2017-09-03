@@ -1,4 +1,4 @@
-#![feature(plugin, use_extern_macros, custom_derive)]
+#!feature(plugin, use_extern_macros, custom_derive)]
 #![plugin(dotenv_macros)]
 #![plugin(rocket_codegen)]
 #[macro_use] extern crate diesel;
@@ -331,7 +331,6 @@ fn main() {
       } {}
     }
   });
-  dotenv().ok().unwrap();
   rocket::ignite()
   .mount("/", routes![home, create, post_create, start_game, start_game_with_id, actually_start_game, answer, search, search_from_keyword, read_pass, write_pass])
   .attach(Template::fairing())
