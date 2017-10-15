@@ -4,18 +4,19 @@
   <h1>{{ title }}</h1>
   <h3>{{ description }}</h3>
   <br>
-  <form id="form">
+  <form method="POST">
   {{ #each opinions }}
-    <input type="checkbox" name="{{ this }}"><label>{{ this }}</label>
+    <input type="checkbox" name="{{ @index }}"><label>{{ this }}</label>
     <br>
   {{ /each }}
   <hr>
+  <input type="submit"></input>
   </form>
-  <button id="submit">Submit</button>
   <br>
   <p>You can select a maximum of {{ max_checks }} checks.</p>
   </center>
   <script>
+  /*
     document.getElementById("submit").onclick = _ => {
       let x = [0, 0]
       let result = Array.from(document.getElementById("form").elements)
@@ -37,6 +38,7 @@
       xml.send(new Uint32Array(x))
       document.getElementsByTagName("html")[0].innerHTML = xml.response
     }
+    */
   </script>
   </body>
 <html>

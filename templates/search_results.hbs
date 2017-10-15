@@ -8,6 +8,12 @@
           <br>
           <h4>{{ this.description }}</h4>
           <br>
+          <ul style="column-count: 3">
+          {{ #each this.opinions }}
+            <li style="word-wrap: break-word">{{ this }}</li>
+          {{ /each }}
+          </ul>
+          <br>
           <a href="/session/{{ this.id }}">Play Now!</a>
           <hr>
         {{ /each }}

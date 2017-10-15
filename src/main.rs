@@ -1,4 +1,5 @@
-#![feature(plugin, use_extern_macros, custom_derive)]
+#![feature(plugin, use_extern_macros, custom_derive, const_fn)]
+#![recursion_limit="128"]
 #![plugin(dotenv_macros)]
 #![plugin(rocket_codegen)]
 #[macro_use] extern crate diesel;
@@ -9,11 +10,10 @@ extern crate dotenv;
 #[macro_use] extern crate serde_derive;
 #[macro_use] extern crate serde_json;
 extern crate rand;
-extern crate byteorder;
 extern crate r2d2;
 extern crate r2d2_diesel;
 
-use rocket_contrib::{ Template, Json };
+use rocket_contrib::Template;
 use rocket::response::content::Html;
 use rocket::response::status::Custom;
 use rocket::State;
@@ -21,14 +21,11 @@ use rocket::http::Status;
 use diesel::pg::PgConnection;
 use diesel::Connection;
 use diesel::prelude::*;
-use dotenv::dotenv;
 use rocket::request::Form;
 use serde_json::json;
 use rand::{ thread_rng, Rng };
 use std::thread;
 use std::time::{ SystemTime, Duration, UNIX_EPOCH };
-use std::io::Read;
-use byteorder::{ LittleEndian, ByteOrder };
 
 type CustomErr = Custom<Template>;
 type TemplateResponder = Result<Template, CustomErr>;
@@ -41,7 +38,7 @@ enum DIWKError {
   IncorrectPassword,
   NotFinished,
   AlreadyFinished,
-  InvalidRequestLength,
+  BadRequest,
   IOError(std::io::Error),
   NoAvailableConnections
 }
@@ -80,14 +77,18 @@ macro_rules! diwk_try {
   };
 }
 
-fn parse_bytes(thing: rocket::data::Data) -> Result<i64, DIWKError> {
-  let mut bytes = thing.open();
-  let mut buffer = [0; 8];
-  diwk_try!(bytes.read(&mut buffer), false);
+fn parse_rawstr(thing: String) -> Result<i64, DIWKError> {
   let mut num: i64 = 0;
-  num |= LittleEndian::read_u32(&mut buffer[0..4]) as i64;
-  num <<= 32;
-  num |= LittleEndian::read_u32(&mut buffer[4..8]) as i64;
+  let mut count = 0;
+  for (key, _) in rocket::request::FormItems::from(&thing[..]) {
+    if count == 63 {
+      return Err(DIWKError::BadRequest);
+    }
+    let decode = diwk_try!(key.parse::<i64>().map_err(|_| DIWKError::BadRequest), false);
+    let temp_num = 1 << decode;
+    num |= temp_num;
+    count += 1;
+  }
   Ok(num)
 }
 
@@ -125,7 +126,7 @@ fn handle_diwk_error(error: DIWKError) -> CustomErr {
     DIWKError::DieselError(x) => Custom(Status::InternalServerError, return_error(x)),
     DIWKError::IncorrectPassword => Custom(Status::Unauthorized, return_error("Wrong password")),
     DIWKError::NotFinished => Custom(Status::BadRequest, return_error("Game has not finished")),
-    DIWKError::InvalidRequestLength => Custom(Status::BadRequest, return_error("Your request length is invalid")),
+    DIWKError::BadRequest => Custom(Status::BadRequest, return_error("Bad request")),
     DIWKError::DieselConnectionError(x) => Custom(Status::InternalServerError, return_error(x)),
     DIWKError::AlreadyFinished => Custom(Status::BadRequest, return_error("Game has already finished")),
     DIWKError::IOError(x) => Custom(Status::InternalServerError, return_error(x)),
@@ -137,6 +138,7 @@ fn in_common(id: i32, integer: i64, conn: &PgConnection) -> Result<Vec<String>, 
   let mut data = diwk_try!(get_chart_with_id(id, conn), false);
   let mut answers: Vec<String> = Vec::new();
   let mut mixed: i64 = integer.clone();
+  data.opinions.reverse();
   while let Some(x) = data.opinions.pop() {
     if mixed & 1 == 1 {
       answers.push(x);
@@ -199,10 +201,10 @@ fn search_from_keyword(keyword: Form<Keyword>, pool: State<DIWKPool>) -> Templat
   Ok(Template::render("search_results", json!({ "results": results })))
 }
 
-#[post("/view/<id>?<write_pass>", data="<bytes>")]
-fn answer(write_pass: WritePass, bytes: rocket::data::Data, id: i32, pool: State<DIWKPool>) -> TemplateResponder {
+#[post("/view/<id>?<write_pass>", data="<string>")]
+fn answer(string: String, id: i32, pool: State<DIWKPool>, write_pass: WritePass) -> TemplateResponder {
   let connection = &*diwk_try!(get_connection((*pool).clone()), true);
-  let inside = diwk_try!(parse_bytes(bytes), true);
+  let inside = diwk_try!(parse_rawstr(string), true);
   let result = diwk_try!(get_session(id, &connection), true);
   if result.write_pass == -1 {
     return Err(handle_diwk_error(DIWKError::AlreadyFinished))
@@ -248,14 +250,15 @@ fn actually_start_game<'a>(form: Form<OpinionSessionForm>, pool: State<DIWKPool>
   .finalize())
 }
 
-#[post("/create", format="application/json", data="<upload>")]
-fn post_create(upload: Json<OpinionChartJSON>, pool: State<DIWKPool>) -> TemplateResponder {
+#[post("/create", data="<upload>")]
+fn post_create(upload: Form<OpinionChartPost>, pool: State<DIWKPool>) -> TemplateResponder {
   let form = upload.into_inner();
+  let insert = OpinionChartInsert { title: form.title, description: form.description, opinions: form.opinions.split("\n").map(|z| z.to_string()).collect() };
   let connection = &*diwk_try!(get_connection((*pool).clone()), true);
   if form.opinions.len() > 63 {
-    return Err(handle_diwk_error(DIWKError::InvalidRequestLength));
+    return Err(handle_diwk_error(DIWKError::BadRequest));
   }
-  let x = diwk_try!(diesel::insert(&form).into(opinioncharts::table).get_result::<OpinionChartSQL>(connection), true);
+  let x = diwk_try!(diesel::insert(&insert).into(opinioncharts::table).get_result::<OpinionChartSQL>(connection), true);
   Ok(Template::render("created", &x))
 }
 
@@ -264,12 +267,11 @@ fn get_connection(pool: DIWKPool) -> Result<r2d2::PooledConnection<r2d2_diesel::
   Ok(conn)
 }
 
-#[derive(Debug, Serialize, Deserialize, Insertable)]
-#[table_name="opinioncharts"]
-struct OpinionChartJSON {
+#[derive(Debug, Serialize, Deserialize, FromForm)]
+struct OpinionChartPost {
   title: String,
   description: String,
-  opinions: Vec<String>,
+  opinions: String,
 }
 
 #[derive(Debug, Queryable, Serialize, Deserialize)]
@@ -286,6 +288,14 @@ struct OpinionSessionForm {
   chart_id: i32,
   max_checks: i16,
   write_pass: i32
+}
+
+#[derive(Insertable)]
+#[table_name="opinioncharts"]
+struct OpinionChartInsert {
+  title: String,
+  description: String,
+  opinions: Vec<String>
 }
 
 #[derive(Debug, Queryable, Serialize, AsChangeset)]

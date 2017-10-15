@@ -3,19 +3,20 @@
     <center id='upload'>  
     <h1>Create a Chart</h1>
     <br><br>
-      <input type='text' id="title" placeholder="Title">
-      <input type='text' id="description" placeholder="Description">
+    <form method="POST">
+      <input type='text' name="title" id="title" placeholder="Title">
+      <input type='text' name="description" id="description" placeholder="Description">
       <br>
       <br>
-      <div id='opinions'>
-        <input type='text' placeholder="Opinion here..."> 
-      </div>
+      <p>Type your opinions below, seperated by newlines</p>
+      <textarea name="opinions" cols="40" rows="40"> </textarea>
       <br id='break'>
-      <button id='add_more' type="button">Add Another Opinion</button>
-      <button id='submit'>Submit</button>
+      <input type="submit"></input>
+      </form>
     </center>
 
   <script>
+  /*
   var current = 0;
   const opinions = document.getElementById('opinions')
   document.getElementById('add_more').onclick = e => {
@@ -46,6 +47,7 @@
     }
   
   }
+  */
   </script>
   </body>
 </html>

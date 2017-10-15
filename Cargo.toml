@@ -5,28 +5,27 @@ authors = ["Flarp <flurpdadurp@gmail.com>"]
 build = "src/build.rs"
 
 [dependencies]
-rocket = "0.3.2"
-rocket_codegen = "0.3.2"
-diesel = { version = "0.14.0", features = ["postgres"] }
-diesel_codegen = { version = "0.14.0", features = ["postgres"] }
+rocket = "0.3.3"
+rocket_codegen = "0.3.3"
+diesel = { version = "0.16.0", features = ["postgres"] }
+diesel_codegen = { version = "0.16.0", features = ["postgres"] }
 dotenv = "*"
 serde = "*"
 serde_derive = "*"
 serde_json = "*"
 rand = "0.3.15"
 dotenv_macros = "*"
-byteorder = "1.1.0"
 r2d2 = "0.7.0"
-r2d2-diesel = "0.15.0"
+r2d2-diesel = "0.16.0"
 
 [dependencies.rocket_contrib]
-version = "0.3.2"
+version = "0.3.3"
 default-features = false
 features = ["handlebars_templates", "json"]
 
 [build-dependencies]
-diesel = { version = "0.14.0", features = ["postgres"] }
-diesel_codegen = { version = "0.14.0", features = ["postgres"] }
+diesel = { version = "0.16.0", features = ["postgres"] }
+diesel_codegen = { version = "0.16.0", features = ["postgres"] }
 dotenv = "*"
 dotenv_macros = "*"
 
