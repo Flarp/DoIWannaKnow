@@ -28,53 +28,40 @@ use std::thread;
 use std::time::{ SystemTime, Duration, UNIX_EPOCH };
 
 type CustomErr = Custom<Template>;
-type TemplateResponder = Result<Template, CustomErr>;
+type TemplateResponder = Result<Template, DIWKError>;
 type DIWKPool = r2d2::Pool<r2d2_diesel::ConnectionManager<PgConnection>>;
 
+#[derive(Debug)]
 enum DIWKError {
   DieselError(diesel::result::Error),
-  DieselConnectionError(diesel::result::ConnectionError),
   NotFound,
   IncorrectPassword,
   NotFinished,
   AlreadyFinished,
   BadRequest,
-  IOError(std::io::Error),
   NoAvailableConnections
+}
+
+fn handle_diwk_error(error: DIWKError) -> CustomErr {
+  match error {
+    DIWKError::NotFound => Custom(Status::NotFound, return_error("Not Found")),
+    DIWKError::DieselError(x) => Custom(Status::InternalServerError, return_error(x)),
+    DIWKError::IncorrectPassword => Custom(Status::Unauthorized, return_error("Wrong password")),
+    DIWKError::NotFinished => Custom(Status::BadRequest, return_error("Game has not finished")),
+    DIWKError::BadRequest => Custom(Status::BadRequest, return_error("Bad request")),
+    DIWKError::AlreadyFinished => Custom(Status::BadRequest, return_error("Game has already finished")),
+    DIWKError::NoAvailableConnections => Custom(Status::ServiceUnavailable, return_error("There are currently no open SQL connections. Please refresh the page and try again."))
+  }
+}
+
+impl<'r> rocket::response::Responder<'r> for DIWKError {
+  fn respond_to(self, req: &rocket::request::Request) -> rocket::response::Result<'r> {
+    handle_diwk_error(self).respond_to(req)
+  }
 }
 
 trait DIWKErrorHack {
   fn get_diwk_error(self) -> DIWKError;
-}
-
-macro_rules! impl_diwk_hack {
-  ($implementor:path, $($variant:path)*) => {
-    impl DIWKErrorHack for $implementor {
-      fn get_diwk_error(self) -> DIWKError {
-        $($variant)*(self)
-      }
-    }
-  }
-}
-
-impl_diwk_hack!(std::io::Error, DIWKError::IOError);
-impl_diwk_hack!(diesel::result::ConnectionError, DIWKError::DieselConnectionError);
-impl_diwk_hack!(diesel::result::Error, DIWKError::DieselError);
-impl_diwk_hack!(DIWKError, );
-
-macro_rules! diwk_try {
-  ($test:expr, true) => {
-    match $test {
-      Ok(z) => z,
-      Err(z) => return Err(handle_diwk_error(z.get_diwk_error()))
-    }
-  };
-  ($test:expr, false) => {
-    match $test {
-      Ok(z) => z,
-      Err(z) => return Err(z.get_diwk_error())
-    }
-  };
 }
 
 fn parse_rawstr(thing: String) -> Result<i64, DIWKError> {
@@ -84,8 +71,8 @@ fn parse_rawstr(thing: String) -> Result<i64, DIWKError> {
     if count == 63 {
       return Err(DIWKError::BadRequest);
     }
-    let decode = diwk_try!(key.parse::<i64>().map_err(|_| DIWKError::BadRequest), false);
-    let temp_num = 1 << decode;
+    let decode = key.parse::<u32>().map_err(|_| DIWKError::BadRequest)?;
+    let temp_num = 1i64.checked_shl(decode).ok_or(DIWKError::BadRequest)?;
     num |= temp_num;
     count += 1;
   }
@@ -106,12 +93,12 @@ fn return_error<T: std::fmt::Display>(string: T) -> Template {
 }
 
 fn get_chart_with_id(id: i32, connection: &PgConnection) -> Result<OpinionChartSQL, DIWKError> {
-  let mut result = diwk_try!(opinioncharts::table.filter(opinioncharts::columns::id.eq(id)).load::<OpinionChartSQL>(connection), false);
+  let mut result = opinioncharts::table.filter(opinioncharts::columns::id.eq(id)).load::<OpinionChartSQL>(connection).map_err(|e| DIWKError::DieselError(e))?;
   result.pop().ok_or(DIWKError::NotFound)
 }
 
 fn get_session(id: i32, connection: &PgConnection) -> Result<OpinionSessionQuery, DIWKError> {
-  let mut result = diwk_try!(opinionsessions::table.filter(opinionsessions::columns::id.eq(id)).load::<OpinionSessionQuery>(connection), false);
+  let mut result = opinionsessions::table.filter(opinionsessions::columns::id.eq(id)).load::<OpinionSessionQuery>(connection).map_err(|e| DIWKError::DieselError(e))?;
   result.pop().ok_or(DIWKError::NotFound)
 }
 
@@ -120,22 +107,8 @@ fn home() -> Html<&'static str> {
   Html(include_str!("index.html"))
 }
 
-fn handle_diwk_error(error: DIWKError) -> CustomErr {
-  match error {
-    DIWKError::NotFound => Custom(Status::NotFound, return_error("Not Found")),
-    DIWKError::DieselError(x) => Custom(Status::InternalServerError, return_error(x)),
-    DIWKError::IncorrectPassword => Custom(Status::Unauthorized, return_error("Wrong password")),
-    DIWKError::NotFinished => Custom(Status::BadRequest, return_error("Game has not finished")),
-    DIWKError::BadRequest => Custom(Status::BadRequest, return_error("Bad request")),
-    DIWKError::DieselConnectionError(x) => Custom(Status::InternalServerError, return_error(x)),
-    DIWKError::AlreadyFinished => Custom(Status::BadRequest, return_error("Game has already finished")),
-    DIWKError::IOError(x) => Custom(Status::InternalServerError, return_error(x)),
-    DIWKError::NoAvailableConnections => Custom(Status::ServiceUnavailable, return_error("There are currently no open SQL connections. Please refresh the page and try again."))
-  }
-}
-
 fn in_common(id: i32, integer: i64, conn: &PgConnection) -> Result<Vec<String>, DIWKError> {
-  let mut data = diwk_try!(get_chart_with_id(id, conn), false);
+  let mut data = get_chart_with_id(id, conn)?;
   let mut answers: Vec<String> = Vec::new();
   let mut mixed: i64 = integer.clone();
   data.opinions.reverse();
@@ -153,16 +126,16 @@ struct WritePass { write_pass: i32 }
 
 #[get("/view/<id>?<write_password>")]
 fn write_pass(id: i32, write_password: WritePass, pool: State<DIWKPool>) -> TemplateResponder {
-  let connection = &*diwk_try!(get_connection((*pool).clone()), true);
-  let result = diwk_try!(get_session(id, &connection), true);
+  let connection = &*(get_connection((*pool).clone()))?;
+  let result = get_session(id, &connection)?;
   if result.write_pass == -1 {
-    return Err(handle_diwk_error(DIWKError::AlreadyFinished))
+    return Err(DIWKError::AlreadyFinished)
   }
   if result.write_pass == write_password.write_pass {
-    let chart = diwk_try!(get_chart_with_id(result.chart_id, &connection), true);
+    let chart = get_chart_with_id(result.chart_id, &connection)?;
     Ok(Template::render("play", json!({ "title": chart.title, "description": chart.description, "opinions": chart.opinions, "password": result.write_pass, "max_checks": result.max_checks })))
   } else {
-    Err(handle_diwk_error(DIWKError::IncorrectPassword))
+    Err(DIWKError::IncorrectPassword)
   }
 }
 
@@ -171,17 +144,17 @@ struct ReadPass { read_pass: i32 }
 
 #[get("/view/<id>?<read_pass>", rank=2)]
 fn read_pass(id: i32, read_pass: ReadPass, pool: State<DIWKPool>) -> TemplateResponder {
-  let connection = &*diwk_try!(get_connection((*pool).clone()), true);
-  let session = diwk_try!(get_session(id, &connection), true);
+  let connection = &*(get_connection((*pool).clone()))?;
+  let session = get_session(id, &connection)?;
   if session.write_pass != -1 {
-    return Err(handle_diwk_error(DIWKError::NotFinished));
+    return Err(DIWKError::NotFinished);
   }
   if session.read_pass == read_pass.read_pass {
-    let results = diwk_try!(in_common(session.chart_id, session.opinion, &connection), true);
-    diwk_try!(diesel::delete(opinionsessions::table.filter(opinionsessions::columns::id.eq(session.id))).execute(connection), true);
+    let results = in_common(session.chart_id, session.opinion, &connection)?;
+    diesel::delete(opinionsessions::table.filter(opinionsessions::columns::id.eq(session.id))).execute(connection).map_err(|e| DIWKError::DieselError(e))?;
     Ok(Template::render("results", json!({ "answers": results })))
   } else {
-    Err(handle_diwk_error(DIWKError::IncorrectPassword))
+    Err(DIWKError::IncorrectPassword)
   }
 }
 
@@ -195,29 +168,29 @@ struct Keyword { query: String }
 
 #[post("/search/keyword", data="<keyword>")]
 fn search_from_keyword(keyword: Form<Keyword>, pool: State<DIWKPool>) -> TemplateResponder {
-  let connection = &*diwk_try!(get_connection((*pool).clone()), true);
+  let connection = &*(get_connection((*pool).clone()))?;
   let formatted = format!("%{}%", keyword.get().query);
-  let results = diwk_try!(opinioncharts::table.filter(opinioncharts::columns::title.ilike(formatted)).load::<OpinionChartSQL>(connection), true);
+  let results = opinioncharts::table.filter(opinioncharts::columns::title.ilike(formatted)).load::<OpinionChartSQL>(connection).map_err(|e| DIWKError::DieselError(e))?;
   Ok(Template::render("search_results", json!({ "results": results })))
 }
 
 #[post("/view/<id>?<write_pass>", data="<string>")]
 fn answer(string: String, id: i32, pool: State<DIWKPool>, write_pass: WritePass) -> TemplateResponder {
-  let connection = &*diwk_try!(get_connection((*pool).clone()), true);
-  let inside = diwk_try!(parse_rawstr(string), true);
-  let result = diwk_try!(get_session(id, &connection), true);
+  let connection = &*(get_connection((*pool).clone()))?;
+  let inside = parse_rawstr(string)?;
+  let result = get_session(id, &connection)?;
   if result.write_pass == -1 {
-    return Err(handle_diwk_error(DIWKError::AlreadyFinished))
+    return Err(DIWKError::AlreadyFinished)
   } else if result.write_pass != write_pass.write_pass {
-    return Err(handle_diwk_error(DIWKError::IncorrectPassword))
+    return Err(DIWKError::IncorrectPassword)
   };
   if result.opinion.signum() == -1 {
     let combined = (result.opinion & inside) & std::i64::MAX;
-    let strings = diwk_try!(in_common(result.chart_id, combined, &connection), true); 
-    diwk_try!(diesel::update(opinionsessions::table.filter(opinionsessions::columns::id.eq(result.id))).set((opinionsessions::columns::write_pass.eq(-1), opinionsessions::columns::opinion.eq(combined))).get_result::<OpinionSessionQuery>(connection), true);
+    let strings = in_common(result.chart_id, combined, &connection)?; 
+    diesel::update(opinionsessions::table.filter(opinionsessions::columns::id.eq(result.id))).set((opinionsessions::columns::write_pass.eq(-1), opinionsessions::columns::opinion.eq(combined))).get_result::<OpinionSessionQuery>(connection).map_err(|e| DIWKError::DieselError(e))?;
     Ok(Template::render("results", json!({ "answers": strings })))
   } else {
-    let answers = diwk_try!(diesel::update(opinionsessions::table.filter(opinionsessions::columns::id.eq(result.id))).set((opinionsessions::columns::opinion.eq(inside | std::i64::MIN), opinionsessions::columns::read_pass.eq(get_rand()))).get_result::<OpinionSessionQuery>(connection), true);
+    let answers = diesel::update(opinionsessions::table.filter(opinionsessions::columns::id.eq(result.id))).set((opinionsessions::columns::opinion.eq(inside | std::i64::MIN), opinionsessions::columns::read_pass.eq(get_rand()))).get_result::<OpinionSessionQuery>(connection).map_err(|e| DIWKError::DieselError(e))?;
     Ok(Template::render("answered", &answers))
   }
 }
@@ -238,12 +211,12 @@ fn start_game_with_id(id: i32) -> Template {
 }
 
 #[post("/session", data = "<form>")]
-fn actually_start_game<'a>(form: Form<OpinionSessionForm>, pool: State<DIWKPool>) -> Result<rocket::response::Response<'a>, CustomErr> {
+fn actually_start_game<'a>(form: Form<OpinionSessionForm>, pool: State<DIWKPool>) -> Result<rocket::response::Response<'a>, DIWKError> {
   let mut value = form.into_inner();
-  let connection = &*diwk_try!(get_connection((*pool).clone()), true);
-  diwk_try!(get_chart_with_id(value.chart_id, &connection), true);
+  let connection = &*(get_connection((*pool).clone()))?;
+  get_chart_with_id(value.chart_id, &connection)?;
   value.write_pass = get_rand();
-  let result = diwk_try!(diesel::insert(&value).into(opinionsessions::table).get_result::<OpinionSessionQuery>(connection), true);
+  let result = diesel::insert(&value).into(opinionsessions::table).get_result::<OpinionSessionQuery>(connection).map_err(|e| DIWKError::DieselError(e))?;
   Ok(rocket::response::Response::build()
   .status(Status::SeeOther)
   .header(rocket::http::hyper::header::Location(format!("/view/{}?write_pass={}", result.id, value.write_pass)))
@@ -254,16 +227,16 @@ fn actually_start_game<'a>(form: Form<OpinionSessionForm>, pool: State<DIWKPool>
 fn post_create(upload: Form<OpinionChartPost>, pool: State<DIWKPool>) -> TemplateResponder {
   let form = upload.into_inner();
   let insert = OpinionChartInsert { title: form.title, description: form.description, opinions: form.opinions.split("\n").map(|z| z.to_string()).collect() };
-  let connection = &*diwk_try!(get_connection((*pool).clone()), true);
-  if form.opinions.len() > 63 {
-    return Err(handle_diwk_error(DIWKError::BadRequest));
+  let connection = &*(get_connection((*pool).clone()))?;
+  if insert.opinions.len() > 63 || insert.opinions.iter().any(|z| z.len() > 127) {
+    return Err(DIWKError::BadRequest);
   }
-  let x = diwk_try!(diesel::insert(&insert).into(opinioncharts::table).get_result::<OpinionChartSQL>(connection), true);
+  let x = diesel::insert(&insert).into(opinioncharts::table).get_result::<OpinionChartSQL>(connection).map_err(|e| DIWKError::DieselError(e))?;
   Ok(Template::render("created", &x))
 }
 
 fn get_connection(pool: DIWKPool) -> Result<r2d2::PooledConnection<r2d2_diesel::ConnectionManager<PgConnection>>, DIWKError> {
-  let conn = diwk_try!(pool.try_get().ok_or(DIWKError::NoAvailableConnections), false);
+  let conn = pool.try_get().ok_or(DIWKError::NoAvailableConnections)?;
   Ok(conn)
 }
 
